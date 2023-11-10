@@ -14,8 +14,8 @@ def black_scholes_option_price(
     volatility: float,
     interest_rate: float,
     is_call: bool,
-) -> tuple[float, float]:
-    """Returns the Black-Scholes option price and delta."""
+) -> tuple[float, float, float]:
+    """Returns the Black-Scholes option price, vega and delta."""
 
     assert years_to_expiry > 0
     assert strike > 0
@@ -36,10 +36,12 @@ def black_scholes_option_price(
             -interest_rate * years_to_expiry
         ) * standard_normal_cdf(d2)
         delta = standard_normal_cdf(d1)
+        vega = spot * np.sqrt(years_to_expiry) * standard_normal_cdf(d1)
     else:
         price = strike * np.exp(-interest_rate * years_to_expiry) * standard_normal_cdf(
             -d2
         ) - spot * standard_normal_cdf(-d1)
         delta = -standard_normal_cdf(-d1)
+        vega = spot * np.sqrt(years_to_expiry) * standard_normal_cdf(d1)
 
-    return price, delta
+    return price, delta, vega

@@ -1,3 +1,6 @@
+from math import floor
+import matplotlib.pyplot as plt
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -17,6 +20,7 @@ ratio = st.number_input(
 )
 
 # Get the current price of the stock
+@st.cache_data
 def get_90_days_history_for_ticker(ticker: str) -> pd.DataFrame:
     return yf.Ticker(ticker).history(period="90d")
 
@@ -24,9 +28,7 @@ def get_90_days_history_for_ticker(ticker: str) -> pd.DataFrame:
 price_history = get_90_days_history_for_ticker(ticker)
 period_high = price_history["High"].max()
 period_low = price_history["Low"].min()
-print(price_history.columns)
 historical_vola = price_history["Close"].pct_change().std() * np.sqrt(252)
-
 
 last_price = price_history.iloc[-1]["Close"]
 
@@ -34,6 +36,8 @@ last_price = price_history.iloc[-1]["Close"]
 historical_vola = st.number_input(
     "Historical Volatiliy", value=historical_vola * 100.0
 )
+# Or even the last price
+last_price = st.number_input("Last Price", value=last_price)
 
 # Print a small summary of the stock
 summary = pd.DataFrame(
@@ -74,6 +78,9 @@ strike_range_start = st.number_input(
 strike_range_end = st.number_input(
     "Enter an ending strike", value=round_strike(last_price * 1.2), step=strike_range_step
 )
+dollars_to_invest = st.number_input(
+    "Enter the amount of dollars to invest", value=1000.0, step=100.0
+)
 
 strikes = np.arange(
     strike_range_start, strike_range_end + strike_range_step, strike_range_step
@@ -86,6 +93,7 @@ option_prices = {
     "Call Delta": [],
     "Put Price": [],
     "Put Delta": [],
+    "Vega": []
 }
 
 vola = float(historical_vola) / 100.0
@@ -96,7 +104,7 @@ for strike in strikes:
     option_prices["Strike"].append(int(strike))
 
     # First for the call
-    price, delta = black_scholes_option_price(
+    price, delta, _ = black_scholes_option_price(
         years_to_expiry=years_to_expiry,
         strike=strike,
         spot=last_price,
@@ -109,7 +117,7 @@ for strike in strikes:
     option_prices["Call Delta"].append(delta)
 
     # Then for the put
-    price, delta = black_scholes_option_price(
+    price, delta, vega = black_scholes_option_price(
         years_to_expiry=years_to_expiry,
         strike=strike,
         spot=last_price,
@@ -120,21 +128,42 @@ for strike in strikes:
 
     option_prices["Put Price"].append(price * ratio)
     option_prices["Put Delta"].append(delta)
+    option_prices["Vega"].append(vega * ratio)
 
 
 option_prices = pd.DataFrame(option_prices)
 option_prices["Distance to Strike (%)"] = (option_prices["Strike"] / last_price - 1.0) * 100.0
 option_prices = option_prices.set_index("Strike")
 
+for idx, row in option_prices.iterrows():
+    calls_per_put = -row['Call Delta'] / row['Put Delta']
+    option_prices.loc[idx, "Calls per Put"] = calls_per_put
 
-st.table(option_prices)
+    max_options = floor(
+        dollars_to_invest / (row['Call Price'] + row['Put Price'] * calls_per_put)
+    )
+
+    # option_prices.loc[idx, "Max Options"] = max_options
+
+option_prices["Vega per Straddle"] = 2 * option_prices["Vega"] / (
+    option_prices["Call Price"] + option_prices["Put Price"] * option_prices["Calls per Put"]
+)
+
+# Highlight the highest vega per straddle value
+# Use a red-green gradient for the vega per straddle
+# df = option_prices.style.background_gradient(
+#     subset=["Vega per Straddle",
+#             "Distance to Strike (%)"
+#             ], cmap="RdBu"
+# )
+df = option_prices.style.highlight_max(subset=["Vega per Straddle"], color="lightgreen")
+st.table(df)
 
 # Plot the option prices
-import matplotlib.pyplot as plt
-
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize=(10, 7))
 ax.plot(option_prices.index, option_prices["Call Price"], label="Call")
 ax.plot(option_prices.index, option_prices["Put Price"], label="Put")
+ax.plot(option_prices.index, option_prices["Vega per Straddle"], label="Vega per Straddle")
 
 ax.set_xlabel("Strike")
 ax.set_ylabel("Option Price")
