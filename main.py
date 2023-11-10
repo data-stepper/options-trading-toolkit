@@ -12,6 +12,9 @@ st.title("Welcome to Option Trader's Toolkit")
 
 # Add a textfield to enter a stock ticker
 ticker = st.text_input("Enter a stock ticker", "AAPL")
+eur_usd = st.number_input(
+    "Enter the current EUR/USD exchange rate", value=1.0
+)
 risk_free_rate = st.number_input(
     "Enter the current risk free rate", value=5.5, step=0.01
 )
@@ -58,8 +61,13 @@ default_date = datetime.utcnow() + timedelta(weeks=20)
 date = st.date_input("Select a date", default_date)
 days_to_expiry = (date - datetime.utcnow().date()).days
 st.write(f"Days to expiry: {days_to_expiry}")
+bs_mu = np.exp(
+    ((risk_free_rate / 100.0) - 0.5 * (historical_vola / 100.0) ** 2) * days_to_expiry / 365.0
+)
 
-"""
+f"""
+Black-Scholes' Expected Price at Maturity: {bs_mu * last_price:.2f}
+
 ## Now please select a range of strikes
 """
 # Let the user select a range of strikes to display
@@ -113,7 +121,7 @@ for strike in strikes:
         is_call=True,
     )
 
-    option_prices["Call Price"].append(price * ratio)
+    option_prices["Call Price"].append(price * ratio / eur_usd)
     option_prices["Call Delta"].append(delta)
 
     # Then for the put
@@ -126,27 +134,32 @@ for strike in strikes:
         is_call=False,
     )
 
-    option_prices["Put Price"].append(price * ratio)
+    option_prices["Put Price"].append(price * ratio / eur_usd)
     option_prices["Put Delta"].append(delta)
     option_prices["Vega"].append(vega * ratio)
 
 
 option_prices = pd.DataFrame(option_prices)
 option_prices["Distance to Strike (%)"] = (option_prices["Strike"] / last_price - 1.0) * 100.0
-option_prices = option_prices.set_index("Strike")
 
 for idx, row in option_prices.iterrows():
-    calls_per_put = -row['Call Delta'] / row['Put Delta']
-    option_prices.loc[idx, "Calls per Put"] = calls_per_put
+    puts_per_call = -row['Call Delta'] / row['Put Delta']
 
     max_options = floor(
-        dollars_to_invest / (row['Call Price'] + row['Put Price'] * calls_per_put)
+        dollars_to_invest / (row['Call Price'] + row['Put Price'] * puts_per_call)
     )
+
+    call_break_even = row['Strike'] + row['Call Price'] / ratio
+    put_break_even = row['Strike'] - row['Put Price'] / ratio
+
+    option_prices.loc[idx, "Call Break Even"] = call_break_even
+    option_prices.loc[idx, "Put Break Even"] = put_break_even
+    option_prices.loc[idx, "Puts per Call"] = puts_per_call
 
     # option_prices.loc[idx, "Max Options"] = max_options
 
 option_prices["Vega per Straddle"] = 2 * option_prices["Vega"] / (
-    option_prices["Call Price"] + option_prices["Put Price"] * option_prices["Calls per Put"]
+    option_prices["Call Price"] + option_prices["Put Price"] * option_prices["Puts per Call"]
 )
 
 # Highlight the highest vega per straddle value
@@ -156,6 +169,7 @@ option_prices["Vega per Straddle"] = 2 * option_prices["Vega"] / (
 #             "Distance to Strike (%)"
 #             ], cmap="RdBu"
 # )
+option_prices = option_prices.set_index("Strike")
 df = option_prices.style.highlight_max(subset=["Vega per Straddle"], color="lightgreen")
 st.table(df)
 
