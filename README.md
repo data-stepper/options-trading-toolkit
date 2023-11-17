@@ -1,2 +1,10 @@
 # options-trading-toolkit
-A simple tool that helps option traders move faster and more accurately
+A simple tool that helps me identify straddles with optimal vega per dollar spent.
+
+![Demo of the Option Trader's Toolkit](https://github.com/data-stepper/options-trading-toolkit/demo.gif)
+
+## Getting started
+
+1. Clone the repo
+2. Setup a python interpreter with the requirements installed (at best in a venv)
+3. run `streamlit run main.py` in your terminal
